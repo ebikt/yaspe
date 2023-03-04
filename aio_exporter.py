@@ -16,6 +16,11 @@ from aio_sdnotify import SystemdNotifier
 
 from typing import List, Union, Iterator, Dict, Callable, Awaitable, Optional, Tuple, cast, Type, Iterable, TypeVar
 
+try:
+    HostType = Union[str, web.HostSequence]
+except AttributeError:
+    HostType = str # type: ignore
+
 
 def labelEncode(val:Union[int,str,bytes]) -> str:
     if isinstance(val, bytes):
@@ -237,7 +242,7 @@ class InfluxMetric(BaseMetric):
             yield '\n'
 
 class Exporter:
-    host:Optional[Union[str,web.HostSequence]] = None
+    host:Optional[HostType] = None
     port:Optional[int] = None
     path:Optional[str] = None
     sock:Optional[socket.socket] = None
