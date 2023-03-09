@@ -373,7 +373,7 @@ class Exporter:
             self.metrics_cache[hash] = task
         try:
             return await asyncio.wait_for(task, timeout = self.collect_timeout)
-        except TimeoutError:
+        except:
             if self.metrics_cache[hash] == task:
                 del self.metrics_cache[hash]
             raise
