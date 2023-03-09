@@ -30,10 +30,11 @@ def labelEncode(val:Union[int,str,bytes]) -> str:
     return val
 
 class MetricValue:
-    def __init__(self, value:Union[int, float], labels:List[str], additional_labels:Dict[str,str]) -> None:
+    def __init__(self, value:Union[int, float], labels:List[str], additional_labels:Dict[str,str], collected_at:Optional[int]) -> None:
         self.value  = value
         self.labels = labels
         self.additional_labels = additional_labels
+        self.collected_at = collected_at
 
 class InfluxRow:
     def __init__(self, labels:List[str], str_values:Dict[str,str], num_values:Dict[str,Union[int,float]]) -> None:
@@ -104,6 +105,7 @@ class Metric(BaseMetric):
 
     def collect(self, value:Union[int, float], *labels_a:Union[int,str,bytes],
             additional_labels:Union[None, Dict[str, str], Dict[str, bytes], Dict[bytes, bytes]] = None,
+            collected_at_ms:Optional[int] = None,
             **labels_kw:Union[int,str,bytes],
         ) -> None:
         labels, remains_kw = self.collect_labels( labels_a = labels_a, labels_kw = labels_kw)
@@ -117,7 +119,7 @@ class Metric(BaseMetric):
                 assert k not in self.labels
                 al[k] = labelEncode(vb)
 
-        self.values[tuple(labels)] = MetricValue(value, labels, al)
+        self.values[tuple(labels)] = MetricValue(value, labels, al, collected_at_ms)
 
     def format_value(self, value:MetricValue) -> str:
         if isinstance(value.value, int): # True and False are instances of int
@@ -153,6 +155,9 @@ class Metric(BaseMetric):
         else:
             yield '"} '
         yield self.format_value(value)
+        if value.collected_at is not None:
+            yield ' '
+            yield str(value.collected_at)
 
     def render_influx_value(self, value:MetricValue) -> Iterator[str]:
         yield self.id
