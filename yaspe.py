@@ -597,7 +597,9 @@ class SqlExporter(Exporter): # {{{
         parser = argparse.ArgumentParser(description='Yet Another SQL Prometheus Exporter')
         parser.add_argument('--listen', '-l', default=None, help='Address to listen on')
         parser.add_argument('--config', '-c', default=DEFAULT_CFG, help=f'Configuration file (default {DEFAULT_CFG})')
+        parser.add_argument('--test-run', '-t', default=False, action='store_true', help=f'test configuration (runs all endpoints)')
         args = parser.parse_args()
+        self.test_run = cast(bool, args.test_run)
         self.config = Config(cast(str, args.config))
         if cast(str, args.listen):
             listen = self.config.parse_address(cast(str, args.listen))
@@ -689,6 +691,43 @@ class SqlExporter(Exporter): # {{{
             metrics['-'].collect(len(err[eid]), eid, additional_labels={'first_error':exc})
 
         return list(metrics.values())
+
+    async def test(self) -> int:
+        class FakeRequest:
+            def __init__(self, path:str) -> None:
+                self.path = '/' + path
+        statistics = { 'sql_exporter_endpoint_queries_ok':0, 'sql_exporter_endpoint_queries_err': 0 }
+        for endpoint in sorted(self.config.endpoints.keys()):
+            req = cast(aiohttp.web.Request, FakeRequest(endpoint))
+            metrics = await self.collect_metrics(req)
+            print(f"# ===== {endpoint} =====")
+            print(self.render(metrics))
+            for m in metrics:
+                if m.id in statistics:
+                    statistics[m.id] += int(sum([ v.value for v in m.values.values() ]))
+
+        for db in self.config.connections.values():
+            if hasattr(db, 'pool'):
+                db.pool.close()
+        for db in self.config.connections.values():
+            if hasattr(db, 'pool'):
+                await db.pool.wait_closed()
+
+        print('# ===== summary =====')
+        for k, v in sorted(statistics.items()):
+            print(f'{k}{{endpoint="@TOTAL"}}: {v}')
+        if statistics['sql_exporter_endpoint_queries_ok'] == 0:
+            return 2
+        elif statistics['sql_exporter_endpoint_queries_err'] > 0:
+            return 1
+        else:
+            return 0
+
+    def run(self) -> None:
+        if self.test_run:
+            sys.exit(asyncio.run(self.test()))
+        else:
+            self.run_app()
 # }}}
 
-SqlExporter().run_app()
+SqlExporter().run()
