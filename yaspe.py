@@ -291,6 +291,8 @@ class MysqlDBConnection(DBConnection): # {{{
     async def get_pool_impl(self, kwargs:Dict[str, Union[str, int, float, bool]], maxsize:int = 10, minsize:int = 0) -> DBTyping.Pool:
         if not MYPY:
             import aiomysql
+            if 'autocommit' not in kwargs:
+                kwargs['autocommit'] = True # We need actual data
             return await aiomysql.create_pool(maxsize = maxsize, minsize = minsize, **kwargs)
         else:
             X()
