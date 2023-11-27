@@ -17,7 +17,7 @@ class DgramUnixConnection(Connection):
         self.proto = asyncio.DatagramProtocol()
         self.trans, _ = await asyncio.get_event_loop().create_datagram_endpoint( # type: ignore
             lambda: self.proto,
-            remote_addr = path, # type: ignore
+            remote_addr = path,
             sock = sock,
             family = socket.AF_UNIX if sock is None else 0
         )
