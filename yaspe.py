@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 try:
-    import aiopg
+    import aiopg # type: ignore[import-not-found]
 except ImportError:
     pass
 else:
@@ -11,7 +11,7 @@ else:
     import selectors  # isort:skip # noqa: F401
 
     selectors._PollLikeSelector.modify = (  # type: ignore
-        selectors._BaseSelectorImpl.modify  # type: ignore
+        selectors._BaseSelectorImpl.modify
     )  # noqa: E402
 
 import asyncio, aiohttp.web
@@ -227,7 +227,6 @@ class YamlList(YamlContext): # {{{
     def __iter__(self) -> Iterator[YamlValue]:
         for i, v in enumerate(self.value):
             yield YamlValue(v, f"{self.context}[{i}]")
-        return iter(self.value)
 
     def __len__(self) -> int:
         return len(self.value)
@@ -278,6 +277,7 @@ class MysqlDBConnection(DBConnection): # {{{
         'read_default_file': (str, None),
         #'conv',
         'use_unicode': (bool,), #FIXME: proper boolean parsing
+        'autocommit': (bool, None),
         #'client_flag',
         #'cursorclass',
         'init_command': (str, None),
@@ -313,7 +313,7 @@ class PostgresqlDBConnection(DBConnection): # {{{
         dsn = kwargs.pop('dsn', None)
         assert dsn is None or isinstance(dsn, str)
         import aiopg
-        pool = await aiopg.create_pool(dsn, maxsize = maxsize, minsize = minsize, **kwargs) # type: ignore [arg-type]
+        pool = await aiopg.create_pool(dsn, maxsize = maxsize, minsize = minsize, **kwargs) # type: ignore [misc]
         return cast(DBTyping.Pool, pool)
 # }}}
 
@@ -386,7 +386,7 @@ class TranslatedValue: # {{{
             if v not in ev.metric.dimensions and v not in self.value_labels:
                 self.value_labels[v] = columns[k]
 
-    def collect(self, row:Sequence[DBTyping.Value]) -> None:
+    def collect(self, row:Sequence[DBTyping.Value], at_range:Tuple[float, float]) -> None:
         dims:List[str] = []
         for d in self.dimensions:
             if isinstance(d, int):
@@ -410,7 +410,10 @@ class TranslatedValue: # {{{
                 at = None
             else:
                 #FIXME support various datetime values!
-                at = int(raw_at)
+                at = int(raw_at) # unix timestamp in miliseconds
+                if at < at_range[0] or at > at_range[1]:
+                    # Ignore record that is in distant past or from future
+                    return
 
         assert isinstance(val, (int, float))
         self.metric.collect(val, *dims, additional_labels=adds, collected_at_ms=at)
@@ -472,6 +475,10 @@ class Config: # {{{
         self.timeout         = root.get('timeout').to(int, 30, 30)
         self.collect_timeout = root.get('collect_timeout').maybe(int, None)
         self.metrics         = { k: CfgMetric(k, v) for k, v in root.get('metrics').to_dict(empty=False).items() }
+
+        older = root.get('discard_at_past').to(float, 3600, 3600)
+        newer = root.get('discard_at_future').to(float, 60, 60)
+        self.at_range = (-older, newer)
 
         self.connections = {}
         self.add_static_connections(root.get('connections').to_dict(none=True))
@@ -568,7 +575,7 @@ class EndpointTask: # {{{
         self.db       = c
         self.m        = m
 
-    async def run(self, timeout:int) -> Optional[str]:
+    async def run(self, timeout:int, at_range:Tuple[float, float]) -> Optional[str]:
         try:
             self.result = await asyncio.wait_for(self.db.execute(self.job.query), timeout=timeout)
             self.error = None
@@ -589,7 +596,7 @@ class EndpointTask: # {{{
         tvs = [ TranslatedValue(cold, ev, self.m) for ev in self.job.values ]
         for row in rows:
             for tv in tvs:
-                tv.collect(row)
+                tv.collect(row, at_range)
         self.completed = True
         return None
 # }}}
@@ -662,8 +669,13 @@ class SqlExporter(Exporter): # {{{
                 for c in j.connections:
                     tasks.append( EndpointTask(e, j, c, metrics) )
 
+        now = time.time()
+        at_range = (
+            (now + self.config.at_range[0] )*1000,
+            (now + self.config.at_range[1] + self.timeout )*1000,
+        )
         status = await cast('asyncio.Future[List[Union[BaseException, Optional[str]]]]',
-                            asyncio.gather( *[ t.run(self.timeout) for t in tasks ], return_exceptions=True))
+                            asyncio.gather( *[ t.run(self.timeout, at_range) for t in tasks ], return_exceptions=True))
 
         for i, t in enumerate(tasks):
             if isinstance(status[i], BaseException):
