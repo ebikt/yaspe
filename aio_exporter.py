@@ -84,7 +84,7 @@ class BaseMetric:
     def render(self, format:str) -> Iterator[str]:
         raise NotImplementedError('virtual')
 
-    INFLUX_SLUGIFY=re.compile('(?:\s|[,"\'=])')
+    INFLUX_SLUGIFY=re.compile(r'(?:\s|[,"\'=])')
 
 
 class Metric(BaseMetric):
@@ -342,7 +342,7 @@ class Exporter:
         )
 
     def on_ready(self, msg:str) -> None:
-        if sys.stdout.isatty():
+        if sys.stdout.isatty(): # type: ignore[misc]
             print(msg)
         msg = msg.replace('\n(Press CTRL+C to quit)','')
         self.sdnotify_tasks.append(asyncio.create_task(self.on_ready_async(msg)))
