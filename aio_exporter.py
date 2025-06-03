@@ -17,6 +17,14 @@ from aio_sdnotify import SystemdNotifier
 from typing import List, Union, Iterator, Dict, Callable, Awaitable, Optional, Tuple, cast, Type, Iterable, TypeVar
 
 try:
+    import decimal
+    NUMERIC=Union[int,float,decimal.Decimal]
+    ISNUMERIC=(int, float, decimal.Decimal)
+except ImportError:
+    NUMERIC=Union[int,float] # type: ignore
+    ISNUMERIC=(int, float)   # type: ignore
+
+try:
     HostType = Union[str, web.HostSequence]
 except AttributeError:
     HostType = str # type: ignore
@@ -30,14 +38,14 @@ def labelEncode(val:Union[int,str,bytes]) -> str:
     return val
 
 class MetricValue:
-    def __init__(self, value:Union[int, float], labels:List[str], additional_labels:Dict[str,str], collected_at:Optional[int]) -> None:
+    def __init__(self, value:NUMERIC, labels:List[str], additional_labels:Dict[str,str], collected_at:Optional[int]) -> None:
         self.value  = value
         self.labels = labels
         self.additional_labels = additional_labels
         self.collected_at = collected_at
 
 class InfluxRow:
-    def __init__(self, labels:List[str], str_values:Dict[str,str], num_values:Dict[str,Union[int,float]]) -> None:
+    def __init__(self, labels:List[str], str_values:Dict[str,str], num_values:Dict[str,NUMERIC]) -> None:
         self.labels = labels
         self.str_values = str_values
         self.num_values = num_values
@@ -103,7 +111,7 @@ class Metric(BaseMetric):
 
         self.values:Dict[Tuple[str, ...], MetricValue] = {}
 
-    def collect(self, value:Union[int, float], *labels_a:Union[int,str,bytes],
+    def collect(self, value:NUMERIC, *labels_a:Union[int,str,bytes],
             additional_labels:Union[None, Dict[str, str], Dict[str, bytes], Dict[bytes, bytes]] = None,
             collected_at_ms:Optional[int] = None,
             **labels_kw:Union[int,str,bytes],
@@ -126,6 +134,8 @@ class Metric(BaseMetric):
             return f"{value.value:d}"
         elif isinstance(value.value, float):
             return f"{value.value:.15e}"
+        elif isinstance(value.value, decimal.Decimal):
+            return f"{value.value}"
         else:
             assert False
 
@@ -194,28 +204,30 @@ class InfluxMetric(BaseMetric):
 
     def collect(self,
             *labels_a:Union[int,str,bytes],
-            **values:Union[int, float, str, bytes],
+            **values:Union[NUMERIC, str, bytes],
         ) -> None:
         labels, remains_kw = self.collect_labels( labels_a = labels_a, labels_kw = values)
 
         str_values: Dict[str, str] = {}
-        num_values: Dict[str, Union[int, float]] = {}
+        num_values: Dict[str, Union[NUMERIC]] = {}
         for k, v in remains_kw.items():
             if isinstance(v, bytes):
                 str_values[k] = v.decode('utf-8')
             elif isinstance(v, str):
                 str_values[k] = v
-            elif isinstance(v, (float, int)):
+            elif isinstance(v, ISNUMERIC):
                 num_values[k] = v
             else:
                 raise ValueError(f"Invalid value of {k!r}: {v!r}")
         self.rows[tuple(labels)] = InfluxRow(labels, str_values, num_values)
 
-    def format_value(self, value:Union[int, float]) -> str:
+    def format_value(self, value:Union[NUMERIC]) -> str:
         if isinstance(value, int): # True and False are instances of int
             return f"{value:d}"
         elif isinstance(value, float):
             return f"{value:.15e}"
+        elif isinstance(value, decimal.Decimal):
+            return f"{value}"
         else:
             assert False
 
