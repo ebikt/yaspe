@@ -15,7 +15,7 @@ else:
     )  # noqa: E402
 
 import asyncio, aiohttp.web
-from aio_exporter import Exporter, Metric, BaseMetric
+from aio_exporter import Exporter, Metric, BaseMetric, ISNUMERIC
 import os
 import sys
 import yaml
@@ -414,8 +414,7 @@ class TranslatedValue: # {{{
                 if at < at_range[0] or at > at_range[1]:
                     # Ignore record that is in distant past or from future
                     return
-
-        assert isinstance(val, (int, float))
+        assert isinstance(val, ISNUMERIC)
         self.metric.collect(val, *dims, additional_labels=adds, collected_at_ms=at)
 # }}}
 
